@@ -15,7 +15,11 @@
 
 #import <UIKit/UIKit.h>
 
-#import <FBRetainCycleDetector/FBRetainCycleDetector-Swift.h>
+#if __has_include("FBRetainCycleDetector-Swift.h")
+    #import "FBRetainCycleDetector-Swift.h"
+#else
+    #import <FBRetainCycleDetector/FBRetainCycleDetector-Swift.h>
+#endif
 
 #import "FBIvarReference.h"
 #import "FBObjectInStructReference.h"
@@ -187,9 +191,9 @@ static NSArray<id<FBObjectReference>> *FBGetStrongReferencesForObjectiveCClass(C
   return filteredIvars;
 }
 
-static NSArray<id<FBObjectReference>> *FBGetStrongReferencesForSwiftClass(id obj, Class aCls) {
+static NSArray<id<FBObjectReference>> *FBGetStrongReferencesForSwiftClass(Class aCls) {
     // This contains all the Swift properties, including of it superclasses (recursive until any Objective-c class)
-    NSArray<PropertyIntrospection *> *const properties = [SwiftIntrospector getPropertiesRecursiveWithObject:obj];
+    NSArray<PropertyIntrospection *> *const properties = [SwiftIntrospector getPropertiesRecursiveWithObjectClass:aCls];
 
     // Since we only want properties for this class, lets create a map and check against `class_copyIvarList`, which isn't recursive
     NSMutableDictionary<NSString *, PropertyIntrospection *> *const propertyMap = [NSMutableDictionary new];
@@ -222,13 +226,13 @@ static NSArray<id<FBObjectReference>> *FBGetStrongReferencesForSwiftClass(id obj
     return [result copy];
 }
 
-static NSArray<id<FBObjectReference>> *FBGetStrongReferencesForClass(id obj, Class aCls, BOOL shouldIncludeSwiftObjects) {
+static NSArray<id<FBObjectReference>> *FBGetStrongReferencesForClass(Class aCls, BOOL shouldIncludeSwiftObjects) {
     if (aCls == nil) {
         return @[];
     }
     if(shouldIncludeSwiftObjects){
       if (FBIsSwiftObjectOrClass(aCls)) {
-        return FBGetStrongReferencesForSwiftClass(obj, aCls);
+        return FBGetStrongReferencesForSwiftClass(aCls);
       } else {
         return FBGetStrongReferencesForObjectiveCClass(aCls);
       }
@@ -246,17 +250,21 @@ NSArray<id<FBObjectReference>> *FBGetObjectStrongReferences(id obj,
   __unsafe_unretained Class previousClass = nil;
   __unsafe_unretained Class currentClass = object_getClass(obj);
 
-  while (previousClass != currentClass && currentClass) {
+  while (previousClass != currentClass) {
     NSArray<id<FBObjectReference>> *ivars;
 
     const char * className = class_getName(currentClass);
     NSString *claseName = [[NSString alloc] initWithCString:className encoding:NSUTF8StringEncoding];
 
-    ivars = layoutCache[claseName];
+    if (layoutCache && currentClass) {
+        ivars = layoutCache[claseName];
+    }
 
     if (!ivars) {
-      ivars = FBGetStrongReferencesForClass(obj, currentClass, shouldIncludeSwiftObjects);
-      layoutCache[claseName] = ivars;
+      ivars = FBGetStrongReferencesForClass(currentClass, shouldIncludeSwiftObjects);
+      if (layoutCache && currentClass) {
+         layoutCache[claseName] = ivars;
+      }
     }
     [array addObjectsFromArray:ivars];
 
